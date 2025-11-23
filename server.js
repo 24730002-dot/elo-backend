@@ -6,25 +6,63 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// JSON 파일 경로
+/* ===========================================================
+   1) 회원 파일
+=========================================================== */
 const USERS_FILE = "./users.json";
 
-// 파일에서 유저 목록 불러오기
 async function loadUsers() {
   try {
     const data = await fs.readFile(USERS_FILE, "utf8");
     return JSON.parse(data);
-  } catch (error) {
+  } catch {
     return [];
   }
 }
 
-// 파일에 유저 목록 저장하기
 async function saveUsers(users) {
   await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
-// 회원가입 API
+/* ===========================================================
+   2) 강의 목록 파일 (마이페이지용 addCourse 저장)
+=========================================================== */
+const COURSES_FILE = "./courses.json";
+
+async function loadCourses() {
+  try {
+    const data = await fs.readFile(COURSES_FILE, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+async function saveCourses(courses) {
+  await fs.writeFile(COURSES_FILE, JSON.stringify(courses, null, 2));
+}
+
+/* ===========================================================
+   3) 진행률 파일
+=========================================================== */
+const PROGRESS_FILE = "./progress.json";
+
+async function loadProgress() {
+  try {
+    const data = await fs.readFile(PROGRESS_FILE, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+async function saveProgress(progress) {
+  await fs.writeFile(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+}
+
+/* ===========================================================
+   ⭐ 회원가입
+=========================================================== */
 app.post("/register", async (req, res) => {
   const { id, pw } = req.body;
 
@@ -33,83 +71,92 @@ app.post("/register", async (req, res) => {
   }
 
   let users = await loadUsers();
-
-  const exists = users.find(u => u.id === id);
-  if (exists) {
+  if (users.find(u => u.id === id)) {
     return res.json({ success: false, message: "이미 존재하는 ID" });
   }
 
   users.push({ id, pw });
   await saveUsers(users);
 
-  return res.json({ success: true, message: "회원가입 성공" });
+  res.json({ success: true, message: "회원가입 성공" });
 });
 
-// 로그인 API
+/* ===========================================================
+   ⭐ 로그인
+=========================================================== */
 app.post("/login", async (req, res) => {
   const { id, pw } = req.body;
 
   let users = await loadUsers();
-
   const user = users.find(u => u.id === id && u.pw === pw);
 
   if (!user) {
     return res.json({ success: false, message: "로그인 실패" });
   }
 
-  return res.json({ success: true, message: "로그인 성공" });
+  res.json({ success: true, message: "로그인 성공" });
 });
 
-// 서버 실행
-app.listen(3000, () => {
-  console.log("Backend running on port 3000");
-});
+/* ===========================================================
+   ⭐ 강의 추가 API (나의 강의실 등록)
+=========================================================== */
+app.post("/addCourse", async (req, res) => {
+  const { user, title, link } = req.body;
 
-const PROGRESS_FILE = "./progress.json";
-
-// 진행률 불러오기
-async function loadProgress() {
-  try {
-    const data = await fs.readFile(PROGRESS_FILE, "utf8");
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
-}
-
-// 진행률 저장
-async function saveProgress(progress) {
-  await fs.writeFile(PROGRESS_FILE, JSON.stringify(progress, null, 2));
-}
-
-/* ================== 진행률 업데이트 API ================== */
-// 예: POST /progress/update  { id, courseId, progress }
-app.post("/progress/update", async (req, res) => {
-  const { id, courseId, progress } = req.body;
-
-  if (!id || !courseId || typeof progress !== "number") {
+  if (!user || !title || !link) {
     return res.json({ success: false, message: "필수 데이터 누락" });
   }
 
-  let list = await loadProgress();
+  let courses = await loadCourses();
 
-  // 기존 데이터 있으면 수정, 없으면 추가
-  const idx = list.findIndex(
-    (p) => p.userId === id && p.courseId === courseId
-  );
+  if (!courses[user]) courses[user] = [];
 
-  if (idx >= 0) {
-    list[idx].progress = progress;
-  } else {
-    list.push({ userId: id, courseId, progress });
+  // 중복방지
+  if (courses[user].some(c => c.title === title)) {
+    return res.json({ success: false, message: "이미 추가된 강의입니다" });
   }
 
-  await saveProgress(list);
-  return res.json({ success: true, message: "진행률 업데이트 완료" });
+  courses[user].push({
+    title,
+    link,
+    progress: 0
+  });
+
+  await saveCourses(courses);
+
+  res.json({ success: true, message: "강의 추가 완료" });
 });
 
-/* ================== 나의 강의실용 조회 API ================== */
-// 예: GET /progress/list?userId=xxx
+/* ===========================================================
+   ⭐ 진행률 업데이트
+=========================================================== */
+app.post("/progress/update", async (req, res) => {
+  const { userId, title, progress } = req.body;
+
+  if (!userId || !title || typeof progress !== "number") {
+    return res.json({ success: false, message: "필수 데이터 누락" });
+  }
+
+  let courses = await loadCourses();
+
+  if (!courses[userId]) courses[userId] = [];
+
+  const idx = courses[userId].findIndex(c => c.title === title);
+
+  if (idx < 0) {
+    return res.json({ success: false, message: "등록되지 않은 강의" });
+  }
+
+  courses[userId][idx].progress = progress;
+
+  await saveCourses(courses);
+
+  res.json({ success: true, message: "진행률 업데이트 완료" });
+});
+
+/* ===========================================================
+   ⭐ 나의 강의실 조회
+=========================================================== */
 app.get("/progress/list", async (req, res) => {
   const userId = req.query.userId;
 
@@ -117,23 +164,16 @@ app.get("/progress/list", async (req, res) => {
     return res.json({ success: false, message: "userId 누락" });
   }
 
-  const list = await loadProgress();
-  const myCourses = list.filter((p) => p.userId === userId);
+  let courses = await loadCourses();
 
-  return res.json({ success: true, courses: myCourses });
+  return res.json({
+    success: true,
+    courses: courses[userId] || []
+  });
 });
 
-app.post("/addCourse", (req, res) => {
-  const { user, title, link, progress } = req.body;
-
-  if (!db[user]) db[user] = [];
-
-  // 중복 체크
-  if (db[user].some(c => c.title === title)) {
-    return res.json({ success: false, message: "Course already added!" });
-  }
-
-  db[user].push({ title, link, progress });
-
-  res.json({ success: true });
-});
+/* ===========================================================
+   서버 시작
+=========================================================== */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Backend running on ${PORT}`));
