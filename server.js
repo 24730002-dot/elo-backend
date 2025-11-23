@@ -25,25 +25,7 @@ async function saveUsers(users) {
 }
 
 /* ===========================================================
-   2) 강의 목록 파일 (마이페이지용 addCourse 저장)
-=========================================================== */
-const COURSES_FILE = "./courses.json";
-
-async function loadCourses() {
-  try {
-    const data = await fs.readFile(COURSES_FILE, "utf8");
-    return JSON.parse(data);
-  } catch {
-    return {};
-  }
-}
-
-async function saveCourses(courses) {
-  await fs.writeFile(COURSES_FILE, JSON.stringify(courses, null, 2));
-}
-
-/* ===========================================================
-   3) 진행률 파일
+   2) 강의 진행률/등록 파일
 =========================================================== */
 const PROGRESS_FILE = "./progress.json";
 
@@ -56,8 +38,8 @@ async function loadProgress() {
   }
 }
 
-async function saveProgress(progress) {
-  await fs.writeFile(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+async function saveProgress(list) {
+  await fs.writeFile(PROGRESS_FILE, JSON.stringify(list, null, 2));
 }
 
 /* ===========================================================
@@ -98,33 +80,35 @@ app.post("/login", async (req, res) => {
 });
 
 /* ===========================================================
-   ⭐ 강의 추가 API (나의 강의실 등록)
+   ⭐ 강의 추가 (나의 강의실 등록)
 =========================================================== */
 app.post("/addCourse", async (req, res) => {
-  const { user, title, link } = req.body;
+  const { userId, title, link } = req.body;
 
-  if (!user || !title || !link) {
+  if (!userId || !title || !link) {
     return res.json({ success: false, message: "필수 데이터 누락" });
   }
 
-  let courses = await loadCourses();
+  let list = await loadProgress();
 
-  if (!courses[user]) courses[user] = [];
+  const exists = list.some(
+    (c) => c.userId === userId && c.title === title
+  );
 
-  // 중복방지
-  if (courses[user].some(c => c.title === title)) {
-    return res.json({ success: false, message: "이미 추가된 강의입니다" });
+  if (exists) {
+    return res.json({ success: false, message: "이미 추가한 강의입니다." });
   }
 
-  courses[user].push({
+  list.push({
+    userId,
     title,
     link,
-    progress: 0
+    progress: 0,
   });
 
-  await saveCourses(courses);
+  await saveProgress(list);
 
-  res.json({ success: true, message: "강의 추가 완료" });
+  res.json({ success: true, message: "강의가 나의강의실에 추가되었습니다." });
 });
 
 /* ===========================================================
@@ -137,19 +121,19 @@ app.post("/progress/update", async (req, res) => {
     return res.json({ success: false, message: "필수 데이터 누락" });
   }
 
-  let courses = await loadCourses();
+  let list = await loadProgress();
 
-  if (!courses[userId]) courses[userId] = [];
-
-  const idx = courses[userId].findIndex(c => c.title === title);
+  const idx = list.findIndex(
+    (c) => c.userId === userId && c.title === title
+  );
 
   if (idx < 0) {
     return res.json({ success: false, message: "등록되지 않은 강의" });
   }
 
-  courses[userId][idx].progress = progress;
+  list[idx].progress = progress;
 
-  await saveCourses(courses);
+  await saveProgress(list);
 
   res.json({ success: true, message: "진행률 업데이트 완료" });
 });
@@ -164,11 +148,11 @@ app.get("/progress/list", async (req, res) => {
     return res.json({ success: false, message: "userId 누락" });
   }
 
-  let courses = await loadCourses();
+  let list = await loadProgress();
 
   return res.json({
     success: true,
-    courses: courses[userId] || []
+    courses: list.filter((c) => c.userId === userId)
   });
 });
 
@@ -177,39 +161,3 @@ app.get("/progress/list", async (req, res) => {
 =========================================================== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend running on ${PORT}`));
-
-/* ================== 강의 추가 API ================== */
-// 예: POST /addCourse { userId, title, link }
-app.post("/addCourse", async (req, res) => {
-  const { userId, title, link } = req.body;
-
-  if (!userId || !title || !link) {
-    return res.json({ success: false, message: "필수 데이터 누락" });
-  }
-
-  // 현재 저장된 진행률 목록 불러오기
-  let list = await loadProgress();
-
-  // 이미 추가된 강의인지 확인
-  const exists = list.some(
-    (c) => c.userId === userId && c.title === title
-  );
-
-  if (exists) {
-    return res.json({ success: false, message: "이미 추가한 강의입니다." });
-  }
-
-  // progress: 0 으로 새 강의 추가
-  list.push({
-    userId,
-    courseId: title, // courseId는 title로 대체함
-    title,
-    link,
-    progress: 0
-  });
-
-  // 파일 저장
-  await saveProgress(list);
-
-  return res.json({ success: true, message: "강의가 나의강의실에 추가되었습니다." });
-});
