@@ -177,3 +177,39 @@ app.get("/progress/list", async (req, res) => {
 =========================================================== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend running on ${PORT}`));
+
+/* ================== 강의 추가 API ================== */
+// 예: POST /addCourse { userId, title, link }
+app.post("/addCourse", async (req, res) => {
+  const { userId, title, link } = req.body;
+
+  if (!userId || !title || !link) {
+    return res.json({ success: false, message: "필수 데이터 누락" });
+  }
+
+  // 현재 저장된 진행률 목록 불러오기
+  let list = await loadProgress();
+
+  // 이미 추가된 강의인지 확인
+  const exists = list.some(
+    (c) => c.userId === userId && c.title === title
+  );
+
+  if (exists) {
+    return res.json({ success: false, message: "이미 추가한 강의입니다." });
+  }
+
+  // progress: 0 으로 새 강의 추가
+  list.push({
+    userId,
+    courseId: title, // courseId는 title로 대체함
+    title,
+    link,
+    progress: 0
+  });
+
+  // 파일 저장
+  await saveProgress(list);
+
+  return res.json({ success: true, message: "강의가 나의강의실에 추가되었습니다." });
+});
