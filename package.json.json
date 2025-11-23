@@ -1,0 +1,12 @@
+{
+  "name": "elo-backend",
+  "type": "module",
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "fs-extra": "^11.2.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
